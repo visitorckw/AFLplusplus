@@ -2764,6 +2764,7 @@ int main(int argc, char **argv_orig, char **envp) {
       }
 
       afl->fuzz_mode = 1;
+      afl->reinit_table = 1;
 
     }
 

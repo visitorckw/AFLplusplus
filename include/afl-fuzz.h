@@ -167,6 +167,9 @@ struct queue_entry {
       is_ascii,                         /* Is the input just ascii text?    */
       disabled;                         /* Is disabled from fuzz selection  */
 
+  u16 loop_cnt,                         /* Loops encountered                */
+      func_cnt;                         /* Functions encountered            */
+
   u32 bitmap_size,                      /* Number of bits set in bitmap     */
       fuzz_level,                       /* Number of fuzzing iterations     */
       n_fuzz_entry                      /* offset in n_fuzz                 */

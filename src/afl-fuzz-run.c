@@ -527,6 +527,15 @@ u8 calibrate_case(afl_state_t *afl, struct queue_entry *q, u8 *use_mem,
     if (unlikely(!q->bitsmap_size)) q->bitsmap_size = afl->bitsmap_size;
 #endif
 
+    if (!afl->stage_cur) {
+
+      q->loop_cnt = (u16) * (((u8 *)afl->fsrv.trace_bits + 1));
+      q->func_cnt = (u16) * (((u8 *)afl->fsrv.trace_bits + 3));
+
+      if (afl->fuzz_mode) { afl->reinit_table = 1; }
+
+    }
+
     classify_counts(&afl->fsrv);
     cksum = hash64(afl->fsrv.trace_bits, afl->fsrv.map_size, HASH_CONST);
     if (q->exec_cksum != cksum) {

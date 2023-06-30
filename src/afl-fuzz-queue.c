@@ -62,7 +62,7 @@ inline u32 select_next_queue_entry(afl_state_t *afl) {
 
 double compute_weight(afl_state_t *afl, struct queue_entry *q,
                       double avg_exec_us, double avg_bitmap_size,
-                      double avg_top_size) {
+                      double avg_top_size, double avg_interesting) {
 
   double weight = 1.0;
 
@@ -80,6 +80,11 @@ double compute_weight(afl_state_t *afl, struct queue_entry *q,
   if (unlikely(weight < 0.1)) { weight = 0.1; }
   if (unlikely(q->favored)) { weight *= 5; }
   if (unlikely(!q->was_fuzzed)) { weight *= 2; }
+  if (unlikely(afl->fuzz_mode)) {
+
+    weight *= (double)(q->loop_cnt + q->func_cnt) / avg_interesting;
+
+  }
 
   return weight;
 
@@ -117,6 +122,7 @@ void create_alias_table(afl_state_t *afl) {
     double avg_exec_us = 0.0;
     double avg_bitmap_size = 0.0;
     double avg_top_size = 0.0;
+    double avg_interesting = 0.0;
     u32    active = 0;
 
     for (i = 0; i < n; i++) {
@@ -129,6 +135,7 @@ void create_alias_table(afl_state_t *afl) {
         avg_exec_us += q->exec_us;
         avg_bitmap_size += log(q->bitmap_size);
         avg_top_size += q->tc_ref;
+        avg_interesting += (q->loop_cnt + q->func_cnt);
         ++active;
 
       }
@@ -138,6 +145,7 @@ void create_alias_table(afl_state_t *afl) {
     avg_exec_us /= active;
     avg_bitmap_size /= active;
     avg_top_size /= active;
+    avg_interesting /= active;
 
     for (i = 0; i < n; i++) {
 
@@ -145,8 +153,8 @@ void create_alias_table(afl_state_t *afl) {
 
       if (likely(!q->disabled)) {
 
-        q->weight =
-            compute_weight(afl, q, avg_exec_us, avg_bitmap_size, avg_top_size);
+        q->weight = compute_weight(afl, q, avg_exec_us, avg_bitmap_size,
+                                   avg_top_size, avg_interesting);
         q->perf_score = calculate_score(afl, q);
         sum += q->weight;
 
