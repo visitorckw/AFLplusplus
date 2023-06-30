@@ -81,6 +81,10 @@
 /* Now non-cmplog configuration options */
 /* -------------------------------------*/
 
+/* How interesting are loops and string/memcpy functions in exploit mode?
+   Default: 1 */
+#define INTERESTING_WEIGHTING 1
+
 /* If a persistent target keeps state and found crashes are not reproducable
    then enable this option and set the AFL_PERSISTENT_RECORD env variable
    to a number. These number of testcases prior and including the crash case
