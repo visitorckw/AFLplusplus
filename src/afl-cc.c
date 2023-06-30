@@ -387,7 +387,11 @@ static u8 fortify_set = 0, asan_set = 0, x_set = 0, bit_mode = 0,
 
 static void process_params(u32 argc, char **argv) {
 
-  if (cc_par_cnt + argc >= MAX_PARAMS_NUM) { FATAL("Too many command line parameters, please increase MAX_PARAMS_NUM."); }
+  if (cc_par_cnt + argc >= MAX_PARAMS_NUM) {
+
+    FATAL("Too many command line parameters, please increase MAX_PARAMS_NUM.");
+
+  }
 
   if (lto_mode && argc > 1) {
 

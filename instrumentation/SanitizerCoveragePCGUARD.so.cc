@@ -18,6 +18,8 @@
     #include "llvm/ADT/Triple.h"
   #endif
 #endif
+#include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/PostDominators.h"
 #if LLVM_VERSION_MAJOR < 15
   #include "llvm/IR/CFG.h"
@@ -122,6 +124,7 @@ SanitizerCoverageOptions OverrideFromCL(SanitizerCoverageOptions Options) {
 using DomTreeCallback = function_ref<const DominatorTree *(Function &F)>;
 using PostDomTreeCallback =
     function_ref<const PostDominatorTree *(Function &F)>;
+using LoopInfoCallback = function_ref<const LoopInfo *(Function &F)>;
 
 class ModuleSanitizerCoverageAFL
     : public PassInfoMixin<ModuleSanitizerCoverageAFL> {
@@ -135,11 +138,13 @@ class ModuleSanitizerCoverageAFL
 
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM);
   bool              instrumentModule(Module &M, DomTreeCallback DTCallback,
-                                     PostDomTreeCallback PDTCallback);
+                                     PostDomTreeCallback PDTCallback,
+                                     LoopInfoCallback    LCallback);
 
  private:
   void instrumentFunction(Function &F, DomTreeCallback DTCallback,
-                          PostDomTreeCallback PDTCallback);
+                          PostDomTreeCallback PDTCallback,
+                          LoopInfoCallback    LCallback);
   void InjectTraceForCmp(Function &F, ArrayRef<Instruction *> CmpTraceTargets);
   void InjectTraceForSwitch(Function               &F,
                             ArrayRef<Instruction *> SwitchTraceTargets);
@@ -196,9 +201,12 @@ class ModuleSanitizerCoverageAFL
   SanitizerCoverageOptions Options;
 
   uint32_t        instr = 0, selects = 0, unhandled = 0;
+  uint32_t        do_loop = 0, do_func = 0;  //, do_asan = 0;
   GlobalVariable *AFLMapPtr = NULL;
-  ConstantInt    *One = NULL;
-  ConstantInt    *Zero = NULL;
+  ConstantInt    *Three = NULL;
+  // ConstantInt    *Two = NULL;
+  ConstantInt *One = NULL;
+  ConstantInt *Zero = NULL;
 
 };
 
@@ -227,9 +235,11 @@ llvmGetPassPluginInfo() {
 
 PreservedAnalyses ModuleSanitizerCoverageAFL::run(Module                &M,
                                                   ModuleAnalysisManager &MAM) {
+
   ModuleSanitizerCoverageAFL ModuleSancov(Options);
   auto &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
-  auto  DTCallback = [&FAM](Function &F) -> const DominatorTree  *{
+
+  auto DTCallback = [&FAM](Function &F) -> const DominatorTree * {
 
     return &FAM.getResult<DominatorTreeAnalysis>(F);
 
@@ -241,8 +251,16 @@ PreservedAnalyses ModuleSanitizerCoverageAFL::run(Module                &M,
 
   };
 
-  if (ModuleSancov.instrumentModule(M, DTCallback, PDTCallback))
+  auto LoopCallback = [&FAM](Function &F) -> const LoopInfo * {
+
+    // return &FAM->getAnalysis<LoopInfoWrapperPass>(F).getLoopInfo();
+    return &FAM.getResult<LoopAnalysis>(F);
+
+  };
+
+  if (ModuleSancov.instrumentModule(M, DTCallback, PDTCallback, LoopCallback))
     return PreservedAnalyses::none();
+
   return PreservedAnalyses::all();
 
 }
@@ -319,7 +337,8 @@ Function *ModuleSanitizerCoverageAFL::CreateInitCallsForSections(
 }
 
 bool ModuleSanitizerCoverageAFL::instrumentModule(
-    Module &M, DomTreeCallback DTCallback, PostDomTreeCallback PDTCallback) {
+    Module &M, DomTreeCallback DTCallback, PostDomTreeCallback PDTCallback,
+    LoopInfoCallback LCallback) {
 
   setvbuf(stdout, NULL, _IONBF, 0);
 
@@ -337,6 +356,10 @@ bool ModuleSanitizerCoverageAFL::instrumentModule(
 
   skip_nozero = getenv("AFL_LLVM_SKIP_NEVERZERO");
   use_threadsafe_counters = getenv("AFL_LLVM_THREADSAFE_INST");
+
+  // if (getenv("DO_ASAN")) { do_asan = 1; }
+  if (getenv("DO_FUNC")) { do_func = 1; }
+  if (getenv("DO_LOOP")) { do_loop = 1; }
 
   initInstrumentList();
   scanForDangerousFunctions(&M);
@@ -368,6 +391,8 @@ bool ModuleSanitizerCoverageAFL::instrumentModule(
   AFLMapPtr =
       new GlobalVariable(M, PointerType::get(Int8Ty, 0), false,
                          GlobalValue::ExternalLinkage, 0, "__afl_area_ptr");
+  Three = ConstantInt::get(IntegerType::getInt32Ty(Ctx), 3);
+  // Two = ConstantInt::get(IntegerType::getInt32Ty(Ctx), 2);
   One = ConstantInt::get(IntegerType::getInt8Ty(Ctx), 1);
   Zero = ConstantInt::get(IntegerType::getInt8Ty(Ctx), 0);
 
@@ -422,7 +447,7 @@ bool ModuleSanitizerCoverageAFL::instrumentModule(
       M.getOrInsertFunction(SanCovTracePCGuardName, VoidTy, Int32PtrTy);
 
   for (auto &F : M)
-    instrumentFunction(F, DTCallback, PDTCallback);
+    instrumentFunction(F, DTCallback, PDTCallback, LCallback);
 
   Function *Ctor = nullptr;
 
@@ -561,7 +586,8 @@ static bool IsInterestingCmp(ICmpInst *CMP, const DominatorTree *DT,
 #endif
 
 void ModuleSanitizerCoverageAFL::instrumentFunction(
-    Function &F, DomTreeCallback DTCallback, PostDomTreeCallback PDTCallback) {
+    Function &F, DomTreeCallback DTCallback, PostDomTreeCallback PDTCallback,
+    LoopInfoCallback LCallback) {
 
   if (F.empty()) return;
   if (!isInInstrumentList(&F, FMNAME)) return;
@@ -593,7 +619,66 @@ void ModuleSanitizerCoverageAFL::instrumentFunction(
 
   const DominatorTree     *DT = DTCallback(F);
   const PostDominatorTree *PDT = PDTCallback(F);
-  bool                     IsLeafFunc = true;
+  bool                     IsLeafFunc = true, is_entry = false;
+  const LoopInfo          *LI = LCallback(F);
+
+  StringRef FName = F.getName();
+  if (!FName.compare(StringRef("main")) || !FName.compare(StringRef("_main")) ||
+      !FName.compare(StringRef("LLVMFuzzerTestOneInput")) ||
+      !FName.compare(StringRef("LLVMFuzzerInitialize")) ||
+      F.getName().find(".module_ctor") != std::string::npos ||
+      F.getLinkage() == GlobalValue::AvailableExternallyLinkage ||
+      F.getName().startswith("__") || F.getName().startswith("llvm")) {
+
+    is_entry = true;
+
+  }
+
+  if (do_loop && !is_entry && LI) {
+
+    for (LoopInfo::iterator I = LI->begin(), E = LI->end(); I != E; ++I) {
+
+      Loop *L = *I;
+      // fprintf(stderr, "Have L = %u %u %u %u\n", L->getNumBlocks(),
+      // L->getLoopDepth(), L->isInnermost(), L->isOutermost());
+      BasicBlock *In, *Out;
+      bool        ok = L->getIncomingAndBackEdge(In, Out);
+      if (ok) {
+
+        LLVMContext         &Ctx = F.getParent()->getContext();
+        BasicBlock::iterator IP = In->getFirstInsertionPt();
+        IRBuilder<>          IRB(&*IP);
+
+        LoadInst *MapPtr =
+            IRB.CreateLoad(PointerType::get(Int8Ty, 0), AFLMapPtr);
+        ModuleSanitizerCoverageAFL::SetNoSanitizeMetadata(MapPtr);
+
+        // Load counter for 1
+
+        Value    *MapPtrIdx = IRB.CreateGEP(Int8Ty, MapPtr, One);
+        LoadInst *Counter = IRB.CreateLoad(IRB.getInt16Ty(), MapPtrIdx);
+        ModuleSanitizerCoverageAFL::SetNoSanitizeMetadata(Counter);
+
+        // Saturated Add
+
+        auto cf = IRB.CreateICmpULT(
+            Counter, ConstantInt::get(IntegerType::getInt16Ty(Ctx), 65535));
+        auto carry = IRB.CreateZExt(cf, IntegerType::getInt16Ty(Ctx));
+        auto Incr = IRB.CreateAdd(Counter, carry);
+
+        // Update bitmap
+
+        StoreInst *StoreCtx = IRB.CreateStore(Incr, MapPtrIdx);
+        ModuleSanitizerCoverageAFL::SetNoSanitizeMetadata(StoreCtx);
+
+      }
+
+      // auto subL = L->getSubLoops();
+      // if (subL.size()) fprintf(stderr, "Have subloops!\n");
+
+    }
+
+  }
 
   for (auto &BB : F) {
 
@@ -715,10 +800,24 @@ bool ModuleSanitizerCoverageAFL::InjectCoverage(
 
   if (AllBlocks.empty()) return false;
 
-  uint32_t        cnt_cov = 0, cnt_sel = 0, cnt_sel_inc = 0;
+  uint32_t        cnt_cov = 0, cnt_sel = 0, cnt_sel_inc = 0, is_entry = 0;
   static uint32_t first = 1;
 
+  StringRef FName = F.getName();
+  if (!FName.compare(StringRef("main")) || !FName.compare(StringRef("_main")) ||
+      !FName.compare(StringRef("LLVMFuzzerTestOneInput")) ||
+      !FName.compare(StringRef("LLVMFuzzerInitialize")) ||
+      F.getName().find(".module_ctor") != std::string::npos ||
+      F.getLinkage() == GlobalValue::AvailableExternallyLinkage ||
+      F.getName().startswith("__") || F.getName().startswith("llvm")) {
+
+    is_entry = 1;
+
+  }
+
   for (auto &BB : F) {
+
+    u32 call_cnt = 0;
 
     for (auto &IN : BB) {
 
@@ -730,6 +829,7 @@ bool ModuleSanitizerCoverageAFL::InjectCoverage(
         if (!Callee) continue;
         if (callInst->getCallingConv() != llvm::CallingConv::C) continue;
         StringRef FuncName = Callee->getName();
+
         if (!FuncName.compare(StringRef("dlopen")) ||
             !FuncName.compare(StringRef("_dlopen"))) {
 
@@ -738,6 +838,13 @@ bool ModuleSanitizerCoverageAFL::InjectCoverage(
                   "that your target dlopen()'s this must either happen before "
                   "__AFL_INIT() or you must use AFL_PRELOAD to preload all "
                   "dlopen()'ed libraries!\n");
+          continue;
+
+        }
+
+        if (do_func && !is_entry && isInterestingCallInst(callInst)) {
+
+          call_cnt = 1;
           continue;
 
         }
@@ -776,6 +883,35 @@ bool ModuleSanitizerCoverageAFL::InjectCoverage(
         }
 
       }
+
+    }
+
+    if (call_cnt && do_func) {
+
+      LLVMContext         &Ctx = F.getParent()->getContext();
+      BasicBlock::iterator IP = BB.getFirstInsertionPt();
+      IRBuilder<>          IRB(&*IP);
+
+      LoadInst *MapPtr = IRB.CreateLoad(PointerType::get(Int8Ty, 0), AFLMapPtr);
+      ModuleSanitizerCoverageAFL::SetNoSanitizeMetadata(MapPtr);
+
+      // Load counter for 2
+
+      Value    *MapPtrIdx = IRB.CreateGEP(Int8Ty, MapPtr, Three);
+      LoadInst *Counter = IRB.CreateLoad(IRB.getInt16Ty(), MapPtrIdx);
+      ModuleSanitizerCoverageAFL::SetNoSanitizeMetadata(Counter);
+
+      // Saturated Add
+
+      auto cf = IRB.CreateICmpULT(
+          Counter, ConstantInt::get(IntegerType::getInt16Ty(Ctx), 65535));
+      auto carry = IRB.CreateZExt(cf, IntegerType::getInt16Ty(Ctx));
+      auto Incr = IRB.CreateAdd(Counter, carry);
+
+      // Update bitmap
+
+      StoreInst *StoreCtx = IRB.CreateStore(Incr, MapPtrIdx);
+      ModuleSanitizerCoverageAFL::SetNoSanitizeMetadata(StoreCtx);
 
     }
 
@@ -1177,6 +1313,7 @@ void ModuleSanitizerCoverageAFL::InjectCoverageAtBlock(Function   &F,
   IRBuilder<> IRB(&*IP);
 #endif
   if (EntryLoc) IRB.SetCurrentDebugLocation(EntryLoc);
+
   if (Options.TracePCGuard) {
 
     /*

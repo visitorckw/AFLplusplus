@@ -5,6 +5,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <sys/time.h>
 #include <fnmatch.h>
@@ -15,6 +16,7 @@
 #include <cmath>
 
 #include <llvm/Support/raw_ostream.h>
+#include <llvm/Analysis/ValueTracking.h>
 
 #define IS_EXTERN extern
 #include "afl-llvm-common.h"
@@ -46,6 +48,145 @@ char *getBBName(const llvm::BasicBlock *BB) {
 #endif
   name = strdup(OS.str().c_str());
   return name;
+
+}
+
+/* Function that do interesting (=bug prone) things. */
+bool isInterestingCallInst(llvm::CallInst *callInst) {
+
+  // c++: copy cpy ...
+
+  static const char *interestingList[] = {
+
+      "calloc",
+      "malloc",
+      "realloc",
+      "free",
+      "hb_copy",
+      "hb_memcpy",
+      "copy_array",
+      "xmlCopyChar",
+      "zend_string_copy",
+      "memcpy",
+      "memcopy",
+      "Memcpy",
+      "Memcopy",
+      "memmove",
+      "bcopy",
+      "memccpy"
+      "wmemcpy",
+      "wmemmove"
+      "strcpy",
+      "strncpy",
+      "strcat",
+      "strncat",
+      "sprintf",
+      "vsprintf",
+      "strlen",
+      "llvm.memcpy.p0i8.p0i8.i64",
+      // "system", "popen", "execv", "spawn"
+
+  };
+
+  u32       interesting = 0, test0 = 0, test1 = 0, test2 = 0, test3 = 0;
+  Function *F = callInst->getCalledFunction();
+  if (!F) { return false; }
+  char *fn = strdup(F->getName().str().c_str());
+  char *fname = fn;
+  if (!fname) { return false; }
+  while (*fname == '_') {
+
+    ++fname;
+
+  }
+
+  if (strcasestr(fname, "copy") || strcasestr(fname, "cpy") ||
+      strcasestr(fname, "alloc") || strcasestr(fname, "free")) {
+
+    if (debug) { DEBUGF("interesting function %s\n", fname); }
+    free(fn);
+    return true;
+
+  }
+
+  for (auto const &interestingFunc : interestingList) {
+
+    if (strncmp(interestingFunc, fname, strlen(fname)) == 0) {
+
+      interesting = 1;
+      break;
+
+    }
+
+  }
+
+  if (!interesting) {
+
+    free(fn);
+    return false;
+
+  }
+
+  if (!strncmp(fname, "memcpy", strlen(fname)) ||
+      !strncmp(fname, "memmove", strlen(fname)) ||
+      !strncmp(fname, "strncpy", strlen(fname)) ||
+      !strncmp(fname, "strncat", strlen(fname)) ||
+      !strncmp(fname, "wmemmove", strlen(fname)) ||
+      !strncmp(fname, "bcopy", strlen(fname)) ||
+      !strncmp(fname, "wmemcpy", strlen(fname))) {
+
+    test1 = 1;
+    test2 = 1;
+
+  } else if (!strncmp(fname, "strcpy", strlen(fname)) ||
+
+             !strncmp(fname, "strcat", strlen(fname))) {
+
+    test1 = 1;
+
+  } else if (!strncmp(fname, "strlen", strlen(fname))) {
+
+    test0 = 1;
+
+  } else if (!strncmp(fname, "memccpy", strlen(fname))) {
+
+    test1 = 1;
+    test3 = 1;
+
+  }
+
+  FunctionType *FT = F->getFunctionType();
+  if (!FT) {
+
+    free(fn);
+    return true;
+
+  }
+
+  u32       param_cnt = FT->getNumParams();
+  StringRef TmpStr;
+
+  if (test0 && param_cnt >= 1) {
+
+    Value *V = callInst->getArgOperand(0);
+    if (!getConstantStringInfo(V, TmpStr)) {
+
+      free(fn);
+      return false;
+
+    }
+
+    if (dyn_cast<ConstantExpr>(V)) {
+
+      free(fn);
+      return false;
+
+    }
+
+  }
+
+  free(fn);
+  return true;
 
 }
 
