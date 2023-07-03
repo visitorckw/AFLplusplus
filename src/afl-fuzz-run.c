@@ -531,6 +531,7 @@ u8 calibrate_case(afl_state_t *afl, struct queue_entry *q, u8 *use_mem,
 
       q->loop_cnt = (u16) * (((u8 *)afl->fsrv.trace_bits + 1));
       q->func_cnt = (u16) * (((u8 *)afl->fsrv.trace_bits + 3));
+      q->all_cnt = (double)(q->loop_cnt + q->func_cnt);
 
       if (afl->fuzz_mode) { afl->reinit_table = 1; }
 

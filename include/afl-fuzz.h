@@ -170,6 +170,8 @@ struct queue_entry {
   u16 loop_cnt,                         /* Loops encountered                */
       func_cnt;                         /* Functions encountered            */
 
+  double all_cnt;                       /* Loops and functions encountered  */
+
   u32 bitmap_size,                      /* Number of bits set in bitmap     */
       fuzz_level,                       /* Number of fuzzing iterations     */
       n_fuzz_entry                      /* offset in n_fuzz                 */
