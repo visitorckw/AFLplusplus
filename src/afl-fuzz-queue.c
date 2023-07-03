@@ -82,9 +82,17 @@ double compute_weight(afl_state_t *afl, struct queue_entry *q,
   if (unlikely(!q->was_fuzzed)) { weight *= 2; }
   if (unlikely(afl->fuzz_mode)) {
 
-    weight *=
-        ((double)INTERESTING_WEIGHTING * (double)(q->loop_cnt + q->func_cnt)) /
-        avg_interesting;
+    if (likely(q->loop_cnt + q->func_cnt)) {
+
+      weight *= ((double)INTERESTING_WEIGHTING *
+                 (double)(q->loop_cnt + q->func_cnt)) /
+                avg_interesting;
+
+    } else {
+
+      weight *= (double)0.1;
+
+    }
 
   }
 
