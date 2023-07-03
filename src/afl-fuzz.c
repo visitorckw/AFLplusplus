@@ -2434,6 +2434,27 @@ int main(int argc, char **argv_orig, char **envp) {
   OKF("Writing mutation introspection to '%s'", ifn);
   #endif
 
+  if (unlikely(getenv("AFL_DUMP_WEIGHTINGS"))) {
+
+    cull_queue(afl);
+    create_alias_table(afl);
+    afl->stop_soon = 1;
+
+    for (u32 i = 0; i < afl->queued_items; ++i) {
+
+      printf(
+          "id=%06u name=%s weight=%.0f pref_score=%.0f favorite=%u "
+          "exec_us=%llu map=%u interesting=%u/%u ascii=%u\n",
+          i, afl->queue_buf[i]->fname, afl->queue_buf[i]->weight,
+          afl->queue_buf[i]->perf_score, afl->queue_buf[i]->favored,
+          afl->queue_buf[i]->exec_us, afl->queue_buf[i]->bitmap_size,
+          afl->queue_buf[i]->loop_cnt, afl->queue_buf[i]->func_cnt,
+          afl->queue_buf[i]->is_ascii);
+
+    }
+
+  }
+
   while (likely(!afl->stop_soon)) {
 
     cull_queue(afl);

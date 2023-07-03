@@ -52,6 +52,7 @@ static char *afl_environment_variables[] = {
     "AFL_DONT_OPTIMIZE",
     "AFL_DRIVER_STDERR_DUPLICATE_FILENAME",
     "AFL_DUMB_FORKSRV",
+    "AFL_DUMP_WEIGHTINGS",
     "AFL_EARLY_FORKSERVER",
     "AFL_ENTRYPOINT",
     "AFL_EXIT_WHEN_DONE",
