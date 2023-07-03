@@ -358,8 +358,28 @@ bool ModuleSanitizerCoverageAFL::instrumentModule(
   use_threadsafe_counters = getenv("AFL_LLVM_THREADSAFE_INST");
 
   // if (getenv("DO_ASAN")) { do_asan = 1; }
-  if (getenv("DO_FUNC")) { do_func = 1; }
-  if (getenv("DO_LOOP")) { do_loop = 1; }
+  if (getenv("DO_FUNC")) {
+
+    do_func = 1;
+
+    if (!be_quiet) {
+
+      fprintf(stderr, "AFL++: Dangerous function collection activated.\n");
+
+    }
+
+  }
+
+  if (getenv("DO_LOOP")) {
+
+    do_loop = 1;
+    if (!be_quiet) {
+
+      fprintf(stderr, "AFL++: Loop function collection activated.\n");
+
+    }
+
+  }
 
   initInstrumentList();
   scanForDangerousFunctions(&M);
