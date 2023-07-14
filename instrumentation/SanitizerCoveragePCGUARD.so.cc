@@ -644,11 +644,10 @@ void ModuleSanitizerCoverageAFL::instrumentFunction(
 
   StringRef FName = F.getName();
   if (!FName.compare(StringRef("main")) || !FName.compare(StringRef("_main")) ||
-      !FName.compare(StringRef("LLVMFuzzerTestOneInput")) ||
-      !FName.compare(StringRef("LLVMFuzzerInitialize")) ||
-      F.getName().find(".module_ctor") != std::string::npos ||
+      F.getName().find(".module_") != std::string::npos ||
       F.getLinkage() == GlobalValue::AvailableExternallyLinkage ||
-      F.getName().startswith("__") || F.getName().startswith("llvm")) {
+      F.getName().startswith("__") || F.getName().startswith("llvm") ||
+      F.getName().startswith("LLVM") || F.getName().startswith("Llvm")) {
 
     is_entry = true;
 
@@ -656,13 +655,61 @@ void ModuleSanitizerCoverageAFL::instrumentFunction(
 
   if (do_loop && !is_entry && LI) {
 
+    // fprintf(stderr, "looping\n");
+
     for (LoopInfo::iterator I = LI->begin(), E = LI->end(); I != E; ++I) {
 
       Loop *L = *I;
-      // fprintf(stderr, "Have L = %u %u %u %u\n", L->getNumBlocks(),
-      // L->getLoopDepth(), L->isInnermost(), L->isOutermost());
+      // fprintf(stderr, "Have L %s = %u %u %u %u %p %p %u\n",
+      // L->getName().str().c_str(),L->getNumBlocks(), L->getLoopDepth(),
+      // L->isInnermost(), L->isOutermost(), L->getCanonicalInductionVariable(),
+      // L->getLatchCmpInst(), L->isGuarded() == true ? 1 : 0);
       BasicBlock *In, *Out;
       bool        ok = L->getIncomingAndBackEdge(In, Out);
+      // fprintf(stderr, "In: %s %p, Out: %s %p\n", In->getName().str().c_str(),
+      // In, Out->getName().str().c_str(), Out);
+
+      if (ok == false) { continue; }
+      ok = false;
+
+      BasicBlock *ExitingBlock = L->getExitingBlock();
+      // fprintf(stderr, "Exit: %s %p\n", ExitingBlock->getName().str().c_str(),
+      // ExitingBlock);
+
+      if (ExitingBlock) {
+
+        for (Instruction &I : *ExitingBlock) {
+
+          if (BranchInst *BI = dyn_cast<BranchInst>(&I)) {
+
+            if (BI->isConditional()) {
+
+              Value *Cond = BI->getCondition();
+              if (ICmpInst *ICI = dyn_cast<ICmpInst>(Cond)) {
+
+                // fprintf(stderr, "have icmp\n");
+                IRBuilder<> IRB(ICI);
+                Value      *A0 = ICI->getOperand(0);
+                Value      *A1 = ICI->getOperand(1);
+                if (!A0->getType()->isIntegerTy()) continue;
+                // uint64_t TypeSize =
+                // DL->getTypeStoreSizeInBits(A0->getType());
+                bool FirstIsConst = isa<ConstantInt>(A0);
+                bool SecondIsConst = isa<ConstantInt>(A1);
+                if (!FirstIsConst && !SecondIsConst) { ok = true; }
+                // fprintf(stderr, "typesize %lu %u %u %u\n", TypeSize,
+                // FirstIsConst, SecondIsConst, ok);
+
+              }
+
+            }
+
+          }
+
+        }
+
+      }
+
       if (ok) {
 
         LLVMContext         &Ctx = F.getParent()->getContext();
@@ -864,7 +911,7 @@ bool ModuleSanitizerCoverageAFL::InjectCoverage(
 
         if (do_func && !is_entry && isInterestingCallInst(callInst)) {
 
-          call_cnt = 1;
+          ++call_cnt;
           continue;
 
         }
@@ -908,30 +955,35 @@ bool ModuleSanitizerCoverageAFL::InjectCoverage(
 
     if (call_cnt && do_func) {
 
-      LLVMContext         &Ctx = F.getParent()->getContext();
-      BasicBlock::iterator IP = BB.getFirstInsertionPt();
-      IRBuilder<>          IRB(&*IP);
+      for (u32 idx = 0; idx < call_cnt; ++idx) {
 
-      LoadInst *MapPtr = IRB.CreateLoad(PointerType::get(Int8Ty, 0), AFLMapPtr);
-      ModuleSanitizerCoverageAFL::SetNoSanitizeMetadata(MapPtr);
+        LLVMContext         &Ctx = F.getParent()->getContext();
+        BasicBlock::iterator IP = BB.getFirstInsertionPt();
+        IRBuilder<>          IRB(&*IP);
 
-      // Load counter for 2
+        LoadInst *MapPtr =
+            IRB.CreateLoad(PointerType::get(Int8Ty, 0), AFLMapPtr);
+        ModuleSanitizerCoverageAFL::SetNoSanitizeMetadata(MapPtr);
 
-      Value    *MapPtrIdx = IRB.CreateGEP(Int8Ty, MapPtr, Three);
-      LoadInst *Counter = IRB.CreateLoad(IRB.getInt16Ty(), MapPtrIdx);
-      ModuleSanitizerCoverageAFL::SetNoSanitizeMetadata(Counter);
+        // Load counter for 2
 
-      // Saturated Add
+        Value    *MapPtrIdx = IRB.CreateGEP(Int8Ty, MapPtr, Three);
+        LoadInst *Counter = IRB.CreateLoad(IRB.getInt16Ty(), MapPtrIdx);
+        ModuleSanitizerCoverageAFL::SetNoSanitizeMetadata(Counter);
 
-      auto cf = IRB.CreateICmpULT(
-          Counter, ConstantInt::get(IntegerType::getInt16Ty(Ctx), 65535));
-      auto carry = IRB.CreateZExt(cf, IntegerType::getInt16Ty(Ctx));
-      auto Incr = IRB.CreateAdd(Counter, carry);
+        // Saturated Add
 
-      // Update bitmap
+        auto cf = IRB.CreateICmpULT(
+            Counter, ConstantInt::get(IntegerType::getInt16Ty(Ctx), 65535));
+        auto carry = IRB.CreateZExt(cf, IntegerType::getInt16Ty(Ctx));
+        auto Incr = IRB.CreateAdd(Counter, carry);
 
-      StoreInst *StoreCtx = IRB.CreateStore(Incr, MapPtrIdx);
-      ModuleSanitizerCoverageAFL::SetNoSanitizeMetadata(StoreCtx);
+        // Update bitmap
+
+        StoreInst *StoreCtx = IRB.CreateStore(Incr, MapPtrIdx);
+        ModuleSanitizerCoverageAFL::SetNoSanitizeMetadata(StoreCtx);
+
+      }
 
     }
 
