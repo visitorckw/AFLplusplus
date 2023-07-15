@@ -73,24 +73,44 @@ double compute_weight(afl_state_t *afl, struct queue_entry *q,
 
   }
 
-  if (likely(afl->schedule < RARE)) { weight *= (avg_exec_us / q->exec_us); }
-  weight *= (log(q->bitmap_size) / avg_bitmap_size);
-  weight *= (1 + (q->tc_ref / avg_top_size));
+  /*
+  printf("%s %.1f %.1f=(1+log(%u/%.1f)) %.1f=2*(1+log(%u/%.1f)) %u 2
+  %.1f=2*(%.1f/%.1f) %llx\n",  q->fname, afl->fuzz_mode ? log(avg_exec_us /
+  q->exec_us) + 1 : (avg_exec_us / q->exec_us), (1 + log(q->bitmap_size /
+  avg_bitmap_size)),q->bitmap_size,avg_bitmap_size, 2.0*(1 + log(q->tc_ref /
+  avg_top_size)), q->tc_ref, avg_top_size, q->favored ? 5 : 1,
+         INTERESTING_WEIGHTING * ((double)q->all_cnt /
+  avg_interesting),q->all_cnt,avg_interesting, q->exec_cksum);
+  */
+
+  weight *= (1 + log(q->bitmap_size / avg_bitmap_size));
+  weight *= (double)2.0 * (1 + log(q->tc_ref / avg_top_size));
 
   if (unlikely(weight < 0.1)) { weight = 0.1; }
   if (unlikely(q->favored)) { weight *= 5; }
   if (unlikely(!q->was_fuzzed)) { weight *= 2; }
+
   if (unlikely(afl->fuzz_mode)) {
+
+    if (likely(afl->schedule < RARE)) {
+
+      weight *= (log(avg_exec_us / q->exec_us) + 1);
+
+    }
 
     if (likely(q->all_cnt)) {
 
-      weight *= ((double)INTERESTING_WEIGHTING * q->all_cnt) / avg_interesting;
+      weight *= (double)INTERESTING_WEIGHTING * (q->all_cnt / avg_interesting);
 
     } else {
 
       weight *= (double)0.1;
 
     }
+
+  } else {
+
+    if (likely(afl->schedule < RARE)) { weight *= (avg_exec_us / q->exec_us); }
 
   }
 
@@ -141,7 +161,7 @@ void create_alias_table(afl_state_t *afl) {
       if (likely(!q->disabled)) {
 
         avg_exec_us += q->exec_us;
-        avg_bitmap_size += log(q->bitmap_size);
+        avg_bitmap_size += q->bitmap_size;
         avg_top_size += q->tc_ref;
         avg_interesting += (q->loop_cnt + q->func_cnt);
         ++active;
