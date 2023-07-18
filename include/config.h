@@ -83,7 +83,7 @@
 
 /* How interesting are loops and string/memcpy functions in exploit mode?
    Default: 2 */
-#define INTERESTING_WEIGHTING 3
+#define INTERESTING_WEIGHTING 2
 
 /* If a persistent target keeps state and found crashes are not reproducable
    then enable this option and set the AFL_PERSISTENT_RECORD env variable
