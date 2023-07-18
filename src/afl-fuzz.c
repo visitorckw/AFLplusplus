@@ -2444,12 +2444,12 @@ int main(int argc, char **argv_orig, char **envp) {
 
       printf(
           "id=%06u name=%s weight=%.0f pref_score=%.0f favorite=%u "
-          "exec_us=%llu map=%u interesting=%u/%u ascii=%u\n",
+          "exec_us=%llu map=%u interesting=%u/%u ascii=%u disabled=%u\n",
           i, afl->queue_buf[i]->fname, afl->queue_buf[i]->weight,
           afl->queue_buf[i]->perf_score, afl->queue_buf[i]->favored,
           afl->queue_buf[i]->exec_us, afl->queue_buf[i]->bitmap_size,
           afl->queue_buf[i]->loop_cnt, afl->queue_buf[i]->func_cnt,
-          afl->queue_buf[i]->is_ascii);
+          afl->queue_buf[i]->is_ascii, afl->queue_buf[i]->disabled);
 
     }
 
