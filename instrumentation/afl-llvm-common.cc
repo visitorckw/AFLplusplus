@@ -88,7 +88,8 @@ bool isInterestingCallInst(llvm::CallInst *callInst) {
 
   };
 
-  u32       interesting = 0, test0 = 0, test1 = 0, test2 = 0, test3 = 0;
+  u32 interesting = 0;
+  // u32     test0 = 0, test1 = 0, test2 = 0, test3 = 0;
   Function *F = callInst->getCalledFunction();
   if (!F) { return false; }
   char *fn = strdup(F->getName().str().c_str());
@@ -127,6 +128,7 @@ bool isInterestingCallInst(llvm::CallInst *callInst) {
 
   }
 
+  /*
   if (!strncmp(fname, "memcpy", strlen(fname)) ||
       !strncmp(fname, "memmove", strlen(fname)) ||
       !strncmp(fname, "strncpy", strlen(fname)) ||
@@ -184,6 +186,8 @@ bool isInterestingCallInst(llvm::CallInst *callInst) {
     }
 
   }
+
+  */
 
   free(fn);
   return true;
