@@ -16,6 +16,7 @@ static char *afl_environment_deprecated[] = {
 
 static char *afl_environment_variables[] = {
 
+    "AFL_WEIGHT",
     "AFL_ALIGNED_ALLOC", "AFL_ALLOW_TMP", "AFL_ANALYZE_HEX", "AFL_AS",
     "AFL_AUTORESUME", "AFL_AS_FORCE_INSTRUMENT", "AFL_BENCH_JUST_ONE",
     "AFL_BENCH_UNTIL_CRASH", "AFL_CAL_FAST", "AFL_CC", "AFL_CC_COMPILER",

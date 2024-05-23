@@ -545,6 +545,8 @@ int main(int argc, char **argv_orig, char **envp) {
 
   afl->shmem_testcase_mode = 1;  // we always try to perform shmem fuzzing
 
+  if (getenv("AFL_WEIGHT")) { afl->weight = true; }
+
   // still available: HjJkKqruvwz
   while ((opt = getopt(argc, argv,
                        "+a:Ab:B:c:CdDe:E:f:F:g:G:hi:I:l:L:m:M:nNo:Op:P:QRs:S:t:"

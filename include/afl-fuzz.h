@@ -485,6 +485,8 @@ typedef struct afl_state {
   /* Position of this state in the global states list */
   u32 _id;
 
+  bool weight;
+
   afl_forkserver_t fsrv;
   sharedmem_t      shm;
   sharedmem_t     *shm_fuzz;

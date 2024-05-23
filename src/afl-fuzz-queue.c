@@ -65,6 +65,17 @@ double compute_weight(afl_state_t *afl, struct queue_entry *q,
                       double avg_top_size) {
 
   double weight = 1.0;
+  double time, len, bitmap, orig;
+
+  if (afl->weight) {
+
+    time = len = bitmap = orig = 1.0;
+
+  } else {
+
+    time = len = bitmap = orig = 0.0;
+
+  }
 
   if (likely(afl->schedule >= FAST && afl->schedule <= RARE)) {
 
@@ -73,14 +84,77 @@ double compute_weight(afl_state_t *afl, struct queue_entry *q,
 
   }
 
-  if (likely(afl->schedule < RARE)) { weight *= (avg_exec_us / q->exec_us); }
-  weight *= (log(q->bitmap_size) / avg_bitmap_size);
-  weight *= (1 + (q->tc_ref / avg_top_size));
+  if (likely(afl->schedule < RARE)) {
 
-  if (unlikely(weight < 0.1)) { weight = 0.1; }
-  if (unlikely(q->favored)) { weight *= 5; }
-  if (unlikely(!q->was_fuzzed)) { weight *= 2; }
-  if (unlikely(q->fs_redundant)) { weight *= 0.8; }
+    if (unlikely((double t = q->exec_us / avg_exec_us) >= 2.0)) {
+
+      time = 6 + t * 0.2;
+
+    }
+
+  }
+
+  double l = q->len / avg_len;
+  if (likely(l < 0.5)) {
+
+    len = 1.50;
+
+  } else if (likely(l < 1.20)) {
+
+    len = 1.25;
+
+  } else if (likely(l < 1.70)) {
+
+    len = 1.00;
+
+  } else if (likely(l <= 2.0)) {
+
+    len = 1.25;
+
+        } else if (unlikely(len >= 20.00) {
+
+    len = 10.0;
+
+        } else {
+
+    len = l / 2;
+
+        }
+
+  if (unlikely(!q->mother)) {
+
+    orig = 10.0;
+
+  }
+
+  bms = q->bitmap_size / avg_bitmap_size;
+  if (unlikely(bms >= 2.0)) {
+
+    bitmap = bms * 2.0;
+
+  } else if (unlikely(bms >= 1.2) {
+
+    bitmap = 1.4;
+
+  }
+
+  if (afl->weight) {
+
+    weight = weight * time * len * bitmap * orig;
+
+  } else {
+
+    weight += (time + len + bitmap + orig);
+
+  }
+
+  //if (unlikely(q->favored)) { weight *= 5; }
+  if (unlikely(!q->was_fuzzed)) {
+
+    weight *= 2; }
+  if (unlikely(q->fs_redundant)) {
+
+    weight *= 0.75; }
 
   return weight;
 
