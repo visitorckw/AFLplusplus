@@ -62,7 +62,7 @@ inline u32 select_next_queue_entry(afl_state_t *afl) {
 
 double compute_weight(afl_state_t *afl, struct queue_entry *q,
                       double avg_exec_us, double avg_bitmap_size,
-                      double avg_top_size) {
+                      double avg_len) {
 
   double weight = 1.0;
   double time, len, bitmap, orig;
@@ -86,11 +86,8 @@ double compute_weight(afl_state_t *afl, struct queue_entry *q,
 
   if (likely(afl->schedule < RARE)) {
 
-    if (unlikely((double t = q->exec_us / avg_exec_us) >= 2.0)) {
-
-      time = 6 + t * 0.2;
-
-    }
+    double t = q->exec_us / avg_exec_us;
+    if (unlikely(t >= 2.0)) { time = 6 + t * 0.2; }
 
   }
 
@@ -111,28 +108,24 @@ double compute_weight(afl_state_t *afl, struct queue_entry *q,
 
     len = 1.25;
 
-        } else if (unlikely(len >= 20.00) {
+  } else if (unlikely(len >= 20.00)) {
 
     len = 10.0;
 
-        } else {
+  } else {
 
     len = l / 2;
 
-        }
-
-  if (unlikely(!q->mother)) {
-
-    orig = 10.0;
-
   }
 
-  bms = q->bitmap_size / avg_bitmap_size;
+  if (unlikely(!q->mother)) { orig = 10.0; }
+
+  double bms = q->bitmap_size / avg_bitmap_size;
   if (unlikely(bms >= 2.0)) {
 
     bitmap = bms * 2.0;
 
-  } else if (unlikely(bms >= 1.2) {
+  } else if (unlikely(bms >= 1.2)) {
 
     bitmap = 1.4;
 
@@ -148,13 +141,9 @@ double compute_weight(afl_state_t *afl, struct queue_entry *q,
 
   }
 
-  //if (unlikely(q->favored)) { weight *= 5; }
-  if (unlikely(!q->was_fuzzed)) {
-
-    weight *= 2; }
-  if (unlikely(q->fs_redundant)) {
-
-    weight *= 0.75; }
+  // if (unlikely(q->favored)) { weight *= 5; }
+  if (unlikely(!q->was_fuzzed)) { weight *= 2; }
+  if (unlikely(q->fs_redundant)) { weight *= 0.75; }
 
   return weight;
 
@@ -191,7 +180,7 @@ void create_alias_table(afl_state_t *afl) {
 
     double avg_exec_us = 0.0;
     double avg_bitmap_size = 0.0;
-    double avg_top_size = 0.0;
+    double avg_len = 0.0;
     u32    active = 0;
 
     for (i = 0; i < n; i++) {
@@ -203,7 +192,7 @@ void create_alias_table(afl_state_t *afl) {
 
         avg_exec_us += q->exec_us;
         avg_bitmap_size += log(q->bitmap_size);
-        avg_top_size += q->tc_ref;
+        avg_len += q->len;
         ++active;
 
       }
@@ -212,7 +201,7 @@ void create_alias_table(afl_state_t *afl) {
 
     avg_exec_us /= active;
     avg_bitmap_size /= active;
-    avg_top_size /= active;
+    avg_len /= active;
 
     for (i = 0; i < n; i++) {
 
@@ -221,7 +210,7 @@ void create_alias_table(afl_state_t *afl) {
       if (likely(!q->disabled)) {
 
         q->weight =
-            compute_weight(afl, q, avg_exec_us, avg_bitmap_size, avg_top_size);
+            compute_weight(afl, q, avg_exec_us, avg_bitmap_size, avg_len);
         q->perf_score = calculate_score(afl, q);
         sum += q->weight;
 
