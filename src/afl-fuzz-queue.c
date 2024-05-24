@@ -65,15 +65,15 @@ double compute_weight(afl_state_t *afl, struct queue_entry *q,
                       double avg_len) {
 
   double weight = 1.0;
-  double time, len, bitmap, orig;
+  double time, len, bitmap;
 
   if (afl->weight) {
 
-    time = len = bitmap = orig = 1.0;
+    time = len = bitmap = 1.0;
 
   } else {
 
-    time = len = bitmap = orig = 0.0;
+    time = len = bitmap = 0.0;
 
   }
 
@@ -84,60 +84,63 @@ double compute_weight(afl_state_t *afl, struct queue_entry *q,
 
   }
 
-  if (likely(afl->schedule < RARE)) {
-
-    double t = q->exec_us / avg_exec_us;
-    if (unlikely(t >= 2.0)) { time = 6 + t * 0.2; }
-
-  }
-
-  double l = q->len / avg_len;
-  if (likely(l < 0.5)) {
-
-    len = 1.50;
-
-  } else if (likely(l < 1.20)) {
-
-    len = 1.25;
-
-  } else if (likely(l < 1.70)) {
-
-    len = 1.00;
-
-  } else if (likely(l <= 2.0)) {
-
-    len = 1.25;
-
-  } else if (unlikely(len >= 20.00)) {
-
-    len = 10.0;
-
-  } else {
-
-    len = l / 2;
-
-  }
-
-  if (unlikely(!q->mother)) { orig = 10.0; }
-
-  double bms = q->bitmap_size / avg_bitmap_size;
-  if (unlikely(bms >= 2.0)) {
-
-    bitmap = bms * 2.0;
-
-  } else if (unlikely(bms >= 1.2)) {
-
-    bitmap = 1.4;
-
-  }
-
   if (afl->weight) {
 
-    weight = weight * time * len * bitmap * orig;
+    if (likely(afl->schedule < RARE)) {
+
+      double t = q->exec_us / avg_exec_us;
+      if (likely(t < 0.2))
+        time = 0.75;
+      else if (unlikely(t > 10))
+        time = 0.9;
+      else if (unlikely(t > 3.0))
+        time = 1.2;
+
+    }
+
+    double l = q->len / avg_len;
+    if (likely(l < 0.20)) len = 0.95;
+    if (likely(l >= 0.70 && l < 1.70))
+      len = 1.0 - (0.15 - (fabs(1.2 - l) * 0.275));
+    else if (unlikely(l >= 7.0))
+      len = 0.9;
+
+    double bms = q->bitmap_size / avg_bitmap_size;
+    if (unlikely(bms >= 1.20 && bms <= 1.5))
+      bitmap = 1.25 * (1.0 - (fabs(bms - 1.35) * 6.66));
+    else if (unlikely(bms > 2.5))
+      bitmap = 0.75;
+
+    weight = weight * time * len * bitmap;
 
   } else {
 
-    weight += (time + len + bitmap + orig);
+    if (likely(afl->schedule < RARE)) {
+
+      double t = q->exec_us / avg_exec_us;
+      if (likely(t < 0.2))
+        time = 0.25;
+      else if (unlikely(t > 10))
+        time = -0.1;
+      else if (unlikely(t > 3.0))
+        time = 0.2;
+
+    }
+
+    double l = q->len / avg_len;
+    if (likely(l < 0.20)) len = -0.05;
+    if (likely(l >= 0.70 && l < 1.70))
+      len = -(0.15 - (fabs(1.2 - l) * 0.275));
+    else if (unlikely(l >= 7.0))
+      len = -0.1;
+
+    double bms = q->bitmap_size / avg_bitmap_size;
+    if (unlikely(bms >= 1.20 && bms <= 1.5))
+      bitmap = 1.0 - 1.25 * (1.0 - (fabs(bms - 1.35) * 6.66));
+    else if (unlikely(bms > 2.5))
+      bitmap = -0.25;
+
+    weight += (time + len + bitmap);
 
   }
 
