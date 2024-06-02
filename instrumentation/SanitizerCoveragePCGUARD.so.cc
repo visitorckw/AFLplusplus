@@ -70,6 +70,8 @@
 #endif
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
+#include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/LoopPass.h"
 
 #include "config.h"
 #include "debug.h"
@@ -119,6 +121,7 @@ SanitizerCoverageOptions OverrideFromCL(SanitizerCoverageOptions Options) {
 
 }
 
+using LoopInfoCallback = function_ref<const LoopInfo *(Function &F)>;
 using DomTreeCallback = function_ref<const DominatorTree *(Function &F)>;
 using PostDomTreeCallback =
     function_ref<const PostDominatorTree *(Function &F)>;
@@ -135,11 +138,13 @@ class ModuleSanitizerCoverageAFL
 
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM);
   bool              instrumentModule(Module &M, DomTreeCallback DTCallback,
-                                     PostDomTreeCallback PDTCallback);
+                                     PostDomTreeCallback PDTCallback,
+                                     LoopInfoCallback    LCallback);
 
  private:
   void instrumentFunction(Function &F, DomTreeCallback DTCallback,
-                          PostDomTreeCallback PDTCallback);
+                          PostDomTreeCallback PDTCallback,
+                          LoopInfoCallback    LCallback);
   void InjectTraceForCmp(Function &F, ArrayRef<Instruction *> CmpTraceTargets);
   void InjectTraceForSwitch(Function               &F,
                             ArrayRef<Instruction *> SwitchTraceTargets);
@@ -195,7 +200,7 @@ class ModuleSanitizerCoverageAFL
 
   SanitizerCoverageOptions Options;
 
-  uint32_t        instr = 0, selects = 0, unhandled = 0, dump_cc = 0;
+  uint32_t instr = 0, selects = 0, unhandled = 0, dump_cc = 0, dump_vc = 0;
   GlobalVariable *AFLMapPtr = NULL;
   ConstantInt    *One = NULL;
   ConstantInt    *Zero = NULL;
@@ -233,8 +238,10 @@ PreservedAnalyses ModuleSanitizerCoverageAFL::run(Module                &M,
                                                   ModuleAnalysisManager &MAM) {
 
   ModuleSanitizerCoverageAFL ModuleSancov(Options);
+
   auto &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
-  auto  DTCallback = [&FAM](Function &F) -> const DominatorTree  *{
+
+  auto DTCallback = [&FAM](Function &F) -> const DominatorTree * {
 
     return &FAM.getResult<DominatorTreeAnalysis>(F);
 
@@ -246,9 +253,21 @@ PreservedAnalyses ModuleSanitizerCoverageAFL::run(Module                &M,
 
   };
 
-  if (ModuleSancov.instrumentModule(M, DTCallback, PDTCallback))
+  auto LoopCallback = [&FAM](Function &F) -> const LoopInfo * {
+
+    return &FAM.getResult<LoopAnalysis>(F);
+
+  };
+
+  if (ModuleSancov.instrumentModule(M, DTCallback, PDTCallback, LoopCallback)) {
+
     return PreservedAnalyses::none();
-  return PreservedAnalyses::all();
+
+  } else {
+
+    return PreservedAnalyses::all();
+
+  }
 
 }
 
@@ -324,13 +343,16 @@ Function *ModuleSanitizerCoverageAFL::CreateInitCallsForSections(
 }
 
 bool ModuleSanitizerCoverageAFL::instrumentModule(
-    Module &M, DomTreeCallback DTCallback, PostDomTreeCallback PDTCallback) {
+    Module &M, DomTreeCallback DTCallback, PostDomTreeCallback PDTCallback,
+    LoopInfoCallback LCallback) {
 
   setvbuf(stdout, NULL, _IONBF, 0);
 
   if (getenv("AFL_DEBUG")) { debug = 1; }
 
   if (getenv("AFL_DUMP_CYCLOMATIC_COMPLEXITY")) { dump_cc = 1; }
+
+  if (getenv("AFL_DUMP_VULNERABILITY_COMPLEXITY")) { dump_vc = 1; }
 
   if ((isatty(2) && !getenv("AFL_QUIET")) || debug) {
 
@@ -429,7 +451,7 @@ bool ModuleSanitizerCoverageAFL::instrumentModule(
       M.getOrInsertFunction(SanCovTracePCGuardName, VoidTy, Int32PtrTy);
 
   for (auto &F : M)
-    instrumentFunction(F, DTCallback, PDTCallback);
+    instrumentFunction(F, DTCallback, PDTCallback, LCallback);
 
   Function *Ctor = nullptr;
 
@@ -568,7 +590,8 @@ static bool IsInterestingCmp(ICmpInst *CMP, const DominatorTree *DT,
 #endif
 
 void ModuleSanitizerCoverageAFL::instrumentFunction(
-    Function &F, DomTreeCallback DTCallback, PostDomTreeCallback PDTCallback) {
+    Function &F, DomTreeCallback DTCallback, PostDomTreeCallback PDTCallback,
+    LoopInfoCallback LCallback) {
 
   if (F.empty()) return;
   if (!isInInstrumentList(&F, FMNAME)) return;
@@ -604,6 +627,7 @@ void ModuleSanitizerCoverageAFL::instrumentFunction(
 
   const DominatorTree     *DT = DTCallback(F);
   const PostDominatorTree *PDT = PDTCallback(F);
+  const LoopInfo          *LI = LCallback(F);
   bool                     IsLeafFunc = true;
 
   for (auto &BB : F) {
@@ -636,11 +660,54 @@ void ModuleSanitizerCoverageAFL::instrumentFunction(
 
   }
 
+  unsigned int score = 0;
+
+  if (dump_cc) { score += calcCyclomaticComplexity(&F, LI); }
+  if (dump_vc) { score += calcVulnerabilityScore(&F, LI, DT, PDT); }
+
+  if (score) {
+
+    BasicBlock::iterator IP = F.getEntryBlock().getFirstInsertionPt();
+    IRBuilder<>          builder(&*IP);
+
+    // Access the int32 value at u8 offset 1 (unaligned access)
+    LoadInst *MapPtr =
+        builder.CreateLoad(PointerType::get(Int8Ty, 0), AFLMapPtr);
+    llvm::Value *CastToInt8Ptr =
+        builder.CreateBitCast(MapPtr, llvm::PointerType::get(Int8Ty, 0));
+    llvm::Value *Int32Ptr = builder.CreateGEP(
+        Int8Ty, CastToInt8Ptr, llvm::ConstantInt::get(Int32Ty, 1));
+    llvm::Value *CastToInt32Ptr =
+        builder.CreateBitCast(Int32Ptr, llvm::PointerType::get(Int32Ty, 0));
+
+    // Load the unaligned int32 value
+    llvm::LoadInst *Load = builder.CreateLoad(Int32Ty, CastToInt32Ptr);
+    Load->setAlignment(llvm::Align(1));
+
+    // Value to add
+    llvm::Value *ValueToAdd = llvm::ConstantInt::get(Int32Ty, score);
+
+    // Perform addition and check for wrap around
+    llvm::Value *Add =
+        builder.CreateAdd(Load, ValueToAdd, "addValue", true, true);
+
+    // Check if addition wrapped (unsigned)
+    llvm::Value *DidWrap = builder.CreateICmpULT(Add, Load, "didWrap");
+
+    // Select the maximum value if there was a wrap, otherwise use the result
+    llvm::Value *MaxInt32 = llvm::ConstantInt::get(Int32Ty, UINT32_MAX);
+    llvm::Value *Result =
+        builder.CreateSelect(DidWrap, MaxInt32, Add, "selectMaxOrResult");
+
+    // Store the result back at the same unaligned offset
+    llvm::StoreInst *Store = builder.CreateStore(Result, CastToInt32Ptr);
+    Store->setAlignment(llvm::Align(1));
+
+  }
+
   InjectCoverage(F, BlocksToInstrument, IsLeafFunc);
   // InjectTraceForCmp(F, CmpTraceTargets);
   // InjectTraceForSwitch(F, SwitchTraceTargets);
-
-  if (dump_cc) { calcCyclomaticComplexity(&F); }
 
 }
 

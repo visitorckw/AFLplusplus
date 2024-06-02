@@ -54,14 +54,14 @@
   #define nullptr 0
 #endif
 
+#include <set>
+#include "afl-llvm-common.h"
+
 #if LLVM_MAJOR >= 19
   #define STARTSWITH starts_with
 #else
   #define STARTSWITH startswith
 #endif
-
-#include <set>
-#include "afl-llvm-common.h"
 
 using namespace llvm;
 
