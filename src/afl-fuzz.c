@@ -46,6 +46,8 @@
 extern u64 time_spent_working;
 #endif
 
+extern u32 timevar;
+
 static void at_exit() {
 
   s32   i, pid1 = 0, pid2 = 0, pgrp = -1;
@@ -544,6 +546,9 @@ int main(int argc, char **argv_orig, char **envp) {
   rand_set_seed(afl, tv.tv_sec ^ tv.tv_usec ^ getpid());
 
   afl->shmem_testcase_mode = 1;  // we always try to perform shmem fuzzing
+
+  if (getenv("TIMEVAR")) timevar = 1;
+
 
   // still available: HjJkKqruvwz
   while ((opt = getopt(argc, argv,
@@ -2571,8 +2576,22 @@ int main(int argc, char **argv_orig, char **envp) {
   OKF("Writing mutation introspection to '%s'", ifn);
   #endif
 
+  sleep(5);
   // real start time, we reset, so this works correctly with -V
   afl->start_time = get_cur_time();
+
+  u64 loop = 0;
+  u64 tmpvar = get_cur_time();
+  tmpvar += (15 * 1000);
+  while (get_cur_time() <= tmpvar) ++loop;
+  WARNF("get_cur_time v%u count %llu\n", timevar, loop);
+  loop = 0;
+  tmpvar = get_cur_time_us();
+  tmpvar += (15 * 1000000);
+  while (get_cur_time_us() <= tmpvar) ++loop;
+  WARNF("get_cur_time_us v%u count %llu\n", timevar, loop);
+  sleep(5);
+  afl->stop_soon = 1;
 
   while (likely(!afl->stop_soon)) {
 

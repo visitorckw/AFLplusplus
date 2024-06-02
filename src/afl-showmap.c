@@ -1702,7 +1702,6 @@ int main(int argc, char **argv_orig, char **envp) {
     if (fsrv->support_shmem_fuzz && !fsrv->use_shmem_fuzz) {
 
       shm_fuzz = deinit_shmem(fsrv, shm_fuzz);
-      shm_fuzz->shmemfuzz_mode = 0;
 
     }
 
@@ -1740,7 +1739,6 @@ int main(int argc, char **argv_orig, char **envp) {
     if (fsrv->support_shmem_fuzz && !fsrv->use_shmem_fuzz) {
 
       shm_fuzz = deinit_shmem(fsrv, shm_fuzz);
-      shm_fuzz->shmemfuzz_mode = 0;
 
     }
 
@@ -1795,7 +1793,6 @@ int main(int argc, char **argv_orig, char **envp) {
   if (fsrv->use_shmem_fuzz) {
 
     shm_fuzz = deinit_shmem(fsrv, shm_fuzz);
-    shm_fuzz->shmemfuzz_mode = 0;
 
   }
 
