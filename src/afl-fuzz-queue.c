@@ -65,17 +65,6 @@ double compute_weight(afl_state_t *afl, struct queue_entry *q,
                       double avg_len) {
 
   double weight = 1.0;
-  double time, len, bitmap;
-
-  if (afl->weight) {
-
-    time = len = bitmap = 1.0;
-
-  } else {
-
-    time = len = bitmap = 0.0;
-
-  }
 
   if (likely(afl->schedule >= FAST && afl->schedule <= RARE)) {
 
@@ -84,65 +73,37 @@ double compute_weight(afl_state_t *afl, struct queue_entry *q,
 
   }
 
-  if (afl->weight) {
+  if (likely(afl->schedule < RARE)) {
 
-    if (likely(afl->schedule < RARE)) {
+    double t = q->exec_us / avg_exec_us;
+    if (likely(t < 0.1)) {
 
-      double t = q->exec_us / avg_exec_us;
-      if (likely(t < 0.2))
-        time = 0.75;
-      else if (unlikely(t > 10))
-        time = 0.9;
-      else if (unlikely(t > 3.0))
-        time = 1.2;
+    } else if (likely(t <= 0.25))
 
-    }
+      weight *= 0.9;
+    else if (likely(t <= 0.5)) {
 
-    double l = q->len / avg_len;
-    if (likely(l < 0.20)) len = 0.95;
-    if (likely(l >= 0.70 && l < 1.70))
-      len = 1.0 - (0.15 - (fabs(1.2 - l) * 0.275));
-    else if (unlikely(l >= 7.0))
-      len = 0.9;
+    } else if (likely(t < 1.0))
 
-    double bms = q->bitmap_size / avg_bitmap_size;
-    if (unlikely(bms >= 1.20 && bms <= 1.5))
-      bitmap = 1.25 * (1.0 - (fabs(bms - 1.35) * 6.66));
-    else if (unlikely(bms > 2.5))
-      bitmap = 0.75;
-
-    weight = weight * time * len * bitmap;
-
-  } else {
-
-    if (likely(afl->schedule < RARE)) {
-
-      double t = q->exec_us / avg_exec_us;
-      if (likely(t < 0.2))
-        time = 0.25;
-      else if (unlikely(t > 10))
-        time = -0.1;
-      else if (unlikely(t > 3.0))
-        time = 0.2;
-
-    }
-
-    double l = q->len / avg_len;
-    if (likely(l < 0.20)) len = -0.05;
-    if (likely(l >= 0.70 && l < 1.70))
-      len = -(0.15 - (fabs(1.2 - l) * 0.275));
-    else if (unlikely(l >= 7.0))
-      len = -0.1;
-
-    double bms = q->bitmap_size / avg_bitmap_size;
-    if (unlikely(bms >= 1.20 && bms <= 1.5))
-      bitmap = 1.0 - 1.25 * (1.0 - (fabs(bms - 1.35) * 6.66));
-    else if (unlikely(bms > 2.5))
-      bitmap = -0.25;
-
-    weight += (time + len + bitmap);
+      weight *= 1.15;
+    else if (unlikely(t > 2.5 && t < 5.0))
+      weight *= 1.1;
 
   }
+
+  double l = q->len / avg_len;
+  if (likely(l < 0.1))
+    weight *= 0.75;
+  else if (likely(l < 0.25))
+    weight *= 1.1;
+  else if (unlikely(l >= 10))
+    weight *= 1.1;
+
+  double bms = q->bitmap_size / avg_bitmap_size;
+  if (likely(bms < 0.5))
+    weight *= (1.0 + ((bms - 0.5) / 2));
+  else if (unlikely(bms > 1.33))
+    weight *= 1.1;
 
   // if (unlikely(q->favored)) { weight *= 5; }
   if (unlikely(!q->was_fuzzed)) { weight *= 2; }
