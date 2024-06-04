@@ -681,6 +681,8 @@ void sync_fuzzers(afl_state_t *afl) {
   /* Look at the entries created for every other fuzzer in the sync directory.
    */
 
+  printf("SYNC start: %llu\n", sync_start_us / 1000000);
+
   while ((sd_ent = readdir(sd))) {
 
     // since sync can take substantial amounts of time, update time spend every
@@ -699,6 +701,8 @@ void sync_fuzzers(afl_state_t *afl) {
       continue;
 
     }
+
+    printf("SYNC entry: %s\n", sd_ent->d_name);
 
     entries++;
 
@@ -878,6 +882,7 @@ void sync_fuzzers(afl_state_t *afl) {
 
   // add time in sync one last time
   update_sync_time(afl, &sync_start_us);
+  printf("SYNC stop: %llu\n", get_cur_time_us() / 1000000);
 
   afl->last_sync_time = get_cur_time();
   afl->last_sync_cycle = afl->queue_cycle;

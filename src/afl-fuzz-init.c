@@ -509,6 +509,8 @@ void read_foreign_testcases(afl_state_t *afl, int first) {
   u8 val_buf[2][STRINGIFY_VAL_SIZE_MAX];
   u8 foreign_name[16];
 
+  printf("FOREIGN SYNC start %llu - %u %s\n", get_cur_time() / 1000, afl->foreign_sync_cnt, afl->foreign_syncs[0].dir);
+
   for (iter = 0; iter < afl->foreign_sync_cnt; iter++) {
 
     if (afl->foreign_syncs[iter].dir && afl->foreign_syncs[iter].dir[0]) {
@@ -680,6 +682,7 @@ void read_foreign_testcases(afl_state_t *afl, int first) {
 
   }
 
+  printf("FOREIGN SYNC stop %llu\n", get_cur_time() / 1000);
 }
 
 /* Read all testcases from the input directory, then queue them for testing.
