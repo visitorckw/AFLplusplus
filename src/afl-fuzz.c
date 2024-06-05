@@ -335,6 +335,7 @@ static void usage(u8 *argv0, int more_help) {
       "AFL_STATSD_PORT: change default statsd port (default: 8125)\n"
       "AFL_STATSD_TAGS_FLAVOR: set statsd tags format (default: disable tags)\n"
       "                        suported formats: dogstatsd, librato, signalfx, influxdb\n"
+      "AFL_NO_SYNC: disables all syncing\n"
       "AFL_SYNC_TIME: sync time between fuzzing instances (in minutes)\n"
       "AFL_FINAL_SYNC: sync a final time when exiting (will delay the exit!)\n"
       "AFL_NO_CRASH_README: do not create a README in the crashes directory\n"
@@ -2942,26 +2943,13 @@ int main(int argc, char **argv_orig, char **envp) {
 
     if (likely(!afl->stop_soon && afl->sync_id)) {
 
-      if (likely(afl->skip_deterministic)) {
+      if (unlikely(afl->is_main_node)) {
 
-        if (unlikely(afl->is_main_node)) {
+        if (unlikely(cur_time > (afl->sync_time >> 1) + afl->last_sync_time)) {
 
-          if (unlikely(cur_time >
-                       (afl->sync_time >> 1) + afl->last_sync_time)) {
+          if (!(sync_interval_cnt++ % (SYNC_INTERVAL / 3))) {
 
-            if (!(sync_interval_cnt++ % (SYNC_INTERVAL / 3))) {
-
-              sync_fuzzers(afl);
-
-            }
-
-          }
-
-        } else {
-
-          if (unlikely(cur_time > afl->sync_time + afl->last_sync_time)) {
-
-            if (!(sync_interval_cnt++ % SYNC_INTERVAL)) { sync_fuzzers(afl); }
+            sync_fuzzers(afl);
 
           }
 
@@ -2969,7 +2957,11 @@ int main(int argc, char **argv_orig, char **envp) {
 
       } else {
 
-        sync_fuzzers(afl);
+        if (unlikely(cur_time > afl->sync_time + afl->last_sync_time)) {
+
+          if (!(sync_interval_cnt++ % SYNC_INTERVAL)) { sync_fuzzers(afl); }
+
+        }
 
       }
 
