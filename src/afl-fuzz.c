@@ -2582,16 +2582,16 @@ int main(int argc, char **argv_orig, char **envp) {
 
   u64 loop = 0;
   u64 tmpvar = get_cur_time();
-  tmpvar += (15 * 1000);
+  tmpvar += (5 * 1000);
   while (get_cur_time() <= tmpvar) ++loop;
   WARNF("get_cur_time v%u count %llu\n", timevar, loop);
   loop = 0;
   tmpvar = get_cur_time_us();
-  tmpvar += (15 * 1000000);
+  tmpvar += (5 * 1000000);
   while (get_cur_time_us() <= tmpvar) ++loop;
   WARNF("get_cur_time_us v%u count %llu\n", timevar, loop);
-  sleep(5);
-  afl->stop_soon = 1;
+  //sleep(5);
+  //afl->stop_soon = 1;
 
   while (likely(!afl->stop_soon)) {
 
