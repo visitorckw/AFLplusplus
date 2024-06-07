@@ -337,6 +337,7 @@ static void usage(u8 *argv0, int more_help) {
       "AFL_STATSD_PORT: change default statsd port (default: 8125)\n"
       "AFL_STATSD_TAGS_FLAVOR: set statsd tags format (default: disable tags)\n"
       "                        suported formats: dogstatsd, librato, signalfx, influxdb\n"
+      "AFL_NO_SYNC: disables all syncing\n"
       "AFL_SYNC_TIME: sync time between fuzzing instances (in minutes)\n"
       "AFL_FINAL_SYNC: sync a final time when exiting (will delay the exit!)\n"
       "AFL_NO_CRASH_README: do not create a README in the crashes directory\n"
@@ -547,8 +548,7 @@ int main(int argc, char **argv_orig, char **envp) {
 
   afl->shmem_testcase_mode = 1;  // we always try to perform shmem fuzzing
 
-  if (getenv("TIMEVAR")) timevar = 1;
-
+  if (getenv("TIMEVAR")) timevar = atoi(getenv("TIMEVAR"));
 
   // still available: HjJkKqruvwz
   while ((opt = getopt(argc, argv,
@@ -2580,6 +2580,7 @@ int main(int argc, char **argv_orig, char **envp) {
   // real start time, we reset, so this works correctly with -V
   afl->start_time = get_cur_time();
 
+  WARNF("TIMEVAR=%d", timevar);
   u64 loop = 0;
   u64 tmpvar = get_cur_time();
   tmpvar += (5 * 1000);
