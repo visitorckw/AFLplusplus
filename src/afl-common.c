@@ -1052,7 +1052,7 @@ inline u64 get_cur_time(void) {
 
     }
 
-    default:
+    default: {
 
       struct timeval  tv;
       struct timespec ts;
@@ -1090,6 +1090,8 @@ inline u64 get_cur_time(void) {
       }
 
       return val_cgt;
+
+    }
 
   }
 
