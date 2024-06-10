@@ -990,7 +990,6 @@ u32 timevar = 0;
 #define NS_TO_MS(ns) ((ns) / 1000000)
 /* Convert nanoseconds to microseconds. */
 #define NS_TO_US(ns) ((ns) / 1000)
-
 /* Convert seconds to milliseconds. */
 #define SEC_TO_MS(sec) ((sec) * 1000)
 /* Convert seconds to microseconds. */
@@ -1012,14 +1011,14 @@ inline u64 get_cur_time(void) {
 
       struct timeval tv;
       gettimeofday(&tv, NULL);
-      return (u64)((tv.tv_sec * 1000ULL) + (tv.tv_usec / 1000));
+      return (u64)(SEC_TO_MS(tv.tv_sec) + NS_TO_MS(tv.tv_usec));
 
     }
 
     case 1: {
 
       struct timespec ts;
-      (void)clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+      (void)clock_gettime(CLOCK_MONOTONIC, &ts);
       return (u64)(SEC_TO_MS((uint64_t)ts.tv_sec) +
                    NS_TO_MS((uint64_t)ts.tv_nsec));
 
@@ -1101,33 +1100,96 @@ inline u64 get_cur_time(void) {
 
 inline u64 get_cur_time_us(void) {
 
-  return get_cur_time() * 1000;
-  /*
-    if (timevar) {
 
-    struct timeval  tv;
-    struct timezone tz;
+  switch (timevar) {
 
-    gettimeofday(&tv, &tz);
+    case 0: {
 
-    return (tv.tv_sec * 1000000ULL) + tv.tv_usec;
-
-    } else {
-
-    struct timespec ts;
-    int             rc = clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
-    if (unlikely(rc == -1)) {
-
-      PFATAL("Failed to obtain timestamp (errno = %i: %s)\n", errno,
-             strerror(errno));
+      struct timeval tv;
+      gettimeofday(&tv, NULL);
+      return (u64)(SEC_TO_US(tv.tv_sec) + NS_TO_US(tv.tv_usec));
 
     }
 
-    return SEC_TO_US((uint64_t)ts.tv_sec) + NS_TO_US((uint64_t)ts.tv_nsec);
+    case 1: {
+
+      struct timespec ts;
+      (void)clock_gettime(CLOCK_MONOTONIC, &ts);
+      return (u64)(SEC_TO_US((uint64_t)ts.tv_sec) +
+                   NS_TO_US((uint64_t)ts.tv_nsec));
 
     }
 
-  */
+    case 2: {
+
+      struct timespec ts;
+      (void)clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+      return (u64)(SEC_TO_US((uint64_t)ts.tv_sec) +
+                   NS_TO_US((uint64_t)ts.tv_nsec));
+
+    }
+
+    case 3: {
+
+      struct timespec ts;
+      (void)clock_gettime(CLOCK_REALTIME, &ts);
+      return (u64)(SEC_TO_US((uint64_t)ts.tv_sec) +
+                   NS_TO_US((uint64_t)ts.tv_nsec));
+
+    }
+
+    case 4: {
+
+      struct timespec ts;
+      (void)clock_gettime(CLOCK_REALTIME_COARSE, &ts);
+      return (u64)(SEC_TO_US((uint64_t)ts.tv_sec) +
+                   NS_TO_US((uint64_t)ts.tv_nsec));
+
+    }
+
+    default: {
+
+      struct timeval  tv;
+      struct timespec ts;
+
+      gettimeofday(&tv, NULL);
+      (void)clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+
+      time_counter++;
+
+      u64 val_gtod = (tv.tv_sec * 1000ULL) + (tv.tv_usec / 1000);
+      u64 val_cgt =
+          SEC_TO_US((uint64_t)ts.tv_sec) + NS_TO_US((uint64_t)ts.tv_nsec);
+
+      if (!time_diff) {
+
+        time_diff = (s64)val_gtod - (s64)val_cgt;
+
+      } else {
+
+        s64 diff = (s64)val_gtod - (s64)val_cgt;
+
+        s64 diff_diff = diff - time_diff;
+
+        if (diff_diff < -10000 || diff_diff > 1000) {
+
+          fprintf(stderr,
+                  "\nBUG! gtod=%llu cgt=%llu orig_diff=%ld cur_diff=%ld "
+                  "diff_diff=%ld counter=%llu\n",
+                  val_gtod / 1000, val_cgt / 1000, time_diff / 1000,
+                  diff / 1000, diff_diff / 1000, time_counter);
+          *foo = 123;
+
+        }
+
+      }
+
+      return val_cgt;
+
+    }
+
+  }
+
 
 }
 
