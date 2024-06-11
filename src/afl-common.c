@@ -998,6 +998,8 @@ u32 timevar = 0;
 #define NS_TO_MS(ns) ((ns) / 1000000)
 /* Convert nanoseconds to microseconds. */
 #define NS_TO_US(ns) ((ns) / 1000)
+/* Convert nanoseconds to microseconds. */
+#define US_TO_MS(us) ((us) / 1000)
 
 static s64  time_diff = 0;
 static u64  time_counter = 0;
@@ -1011,7 +1013,7 @@ inline u64 get_cur_time(void) {
 
       struct timeval tv;
       gettimeofday(&tv, NULL);
-      return (u64)(SEC_TO_MS(tv.tv_sec) + NS_TO_MS(tv.tv_usec));
+      return (u64)(SEC_TO_MS(tv.tv_sec) + US_TO_MS(tv.tv_usec));
 
     }
 
@@ -1107,7 +1109,7 @@ inline u64 get_cur_time_us(void) {
 
       struct timeval tv;
       gettimeofday(&tv, NULL);
-      return (u64)(SEC_TO_US(tv.tv_sec) + NS_TO_US(tv.tv_usec));
+      return (u64)(SEC_TO_US(tv.tv_sec) + tv.tv_usec);
 
     }
 
