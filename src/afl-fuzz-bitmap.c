@@ -75,18 +75,16 @@ u32 count_bits(afl_state_t *afl, u8 *mem) {
 
     }
 
-#if defined(__has_builtin)
-  #if __has_builtin(__builtin_popcount)
+#ifndef __has_builtin
+  #define __has_builtin(x) 0
+#endif
+
+#if __has_builtin(__builtin_popcount)
     ret += __builtin_popcount(v);
-  #else
+#else
     v -= ((v >> 1) & 0x55555555);
     v = (v & 0x33333333) + ((v >> 2) & 0x33333333);
     ret += (((v + (v >> 4)) & 0xF0F0F0F) * 0x01010101) >> 24;
-  #endif
-#else
-  v -= ((v >> 1) & 0x55555555);
-  v = (v & 0x33333333) + ((v >> 2) & 0x33333333);
-  ret += (((v + (v >> 4)) & 0xF0F0F0F) * 0x01010101) >> 24;
 #endif
 
   }
