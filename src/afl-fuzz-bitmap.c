@@ -75,7 +75,7 @@ u32 count_bits(afl_state_t *afl, u8 *mem) {
 
     }
 
-#if defined __has_builtin && __has_builtin(__builtin_popcount)
+#if defined(__has_builtin) && __has_builtin(__builtin_popcount)
     ret += __builtin_popcount(v);
 #else
     v -= ((v >> 1) & 0x55555555);
